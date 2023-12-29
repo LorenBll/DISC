@@ -19,7 +19,7 @@ void genereate_encryptionKey ( char *encryptionKey , int encryptionKeyLength ) {
 
 }
 
-char* genereate_encryptionSalt () {
+void genereate_encryptionSalt ( char *encryptionSalt ) {
     //. funzione che genera un sale di criptazione
 
     const char encryptionSaltAlphabet[] = "[{]}!@#$^&*()_+-=,./<>?;':|";
@@ -33,34 +33,82 @@ char* genereate_encryptionSalt () {
 
     encryptionSalt[5] = '\0';
 
-    return encryptionSalt;
+}
+
+
+
+void encrypt_string ( char *stringToEncrypt , char *encryptionKey , char *encryptionSalt ) {
+    //. funzione che cripta una stringa
+
+    int stringToEncryptLength = strlen( stringToEncrypt );
+    int encryptionKeyLength = strlen( encryptionKey );
+    int encryptionSaltLength = strlen( encryptionSalt );
+
+    char *encryptedString = (char*) malloc( sizeof(char) * ( stringToEncryptLength + encryptionKeyLength + encryptionSaltLength + 1 ) );
+
+    int i = 0;
+    int j = 0;
+    int k = 0;
+
+    // in questo modo se la chiave di criptazione è più corta della stringa da criptare, la chiave viene ripetuta
+    while ( i < stringToEncryptLength ) {
+        encryptedString[i] = stringToEncrypt[i] ^ encryptionKey[j] ^ encryptionSalt[k];
+
+        i++;
+        j++;
+        k++;
+
+        if ( j == encryptionKeyLength ) {
+            j = 0;
+        }
+
+        if ( k == encryptionSaltLength ) {
+            k = 0;
+        }
+    }
+
+    encryptedString[stringToEncryptLength] = '\0';
+
+    strcpy( stringToEncrypt , encryptedString );
+
+    free( encryptedString );
 
 }
 
-void encrypt_string ( char *string , char *encryptionKey , char *encryptionSalt ) {
-    //. funzione che prende in input una stringa e la cripta
+void decrypt_string ( char *stringToDecrypt , char *encryptionKey , char *encryptionSalt ) {
+    //. funzione che decripta una stringa
 
-    int stringLength = strlen(string);
-    int encryptionKeyLength = strlen(encryptionKey);
+    int stringToDecryptLength = strlen( stringToDecrypt );
+    int encryptionKeyLength = strlen( encryptionKey );
+    int encryptionSaltLength = strlen( encryptionSalt );
 
-    for ( int i = 0 ; i < stringLength ; i++ ) {
-        string[i] = string[i] ^ encryptionKey[i % encryptionKeyLength] ^ encryptionSalt[i % 5];
+    char *decryptedString = (char*) malloc( sizeof(char) * ( stringToDecryptLength + encryptionKeyLength + encryptionSaltLength + 1 ) );
+
+    int i = 0;
+    int j = 0;
+    int k = 0;
+
+    // in questo modo se la chiave di criptazione è più corta della stringa da criptare, la chiave viene ripetuta
+    while ( i < stringToDecryptLength ) {
+        decryptedString[i] = stringToDecrypt[i] ^ encryptionKey[j] ^ encryptionSalt[k];
+
+        i++;
+        j++;
+        k++;
+
+        if ( j == encryptionKeyLength ) {
+            j = 0;
+        }
+
+        if ( k == encryptionSaltLength ) {
+            k = 0;
+        }
     }
 
-    string[stringLength] = '\0';
+    decryptedString[stringToDecryptLength] = '\0';
 
-}
+    strcpy( stringToDecrypt , decryptedString );
 
-void decrypt_string ( char *string , char *encryptionKey , char *encryptionSalt ) {
-    //. funzione che prende in input una stringa criptata e la decripta
-
-    int stringLength = strlen(string);
-    int encryptionKeyLength = strlen(encryptionKey);
-
-    for ( int i = 0 ; i < stringLength ; i++ ) {
-        string[i] = string[i] ^ encryptionKey[i % encryptionKeyLength] ^ encryptionSalt[i % 5];
-    }
-
-    string[stringLength] = '\0';
+    free( decryptedString );
 
 }
