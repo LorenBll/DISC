@@ -53,33 +53,31 @@ typedef enum boolean {
 
 
 //! === ENCRYPTION SECTION ===
-void genereate_encryptionKey ( char *encryptionKey , int encryptionKeyLength ) {
+void genereate_encryptionKey ( char *encryptionKeyStorage , int encryptionKeyLength ) {
     //. funzione che genera una chiave di criptazione
 
     const char encryptionKeyAlphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     srand( time(NULL) );
 
     for ( int i = 0 ; i < encryptionKeyLength ; i++ ) {
-        encryptionKey[i] = encryptionKeyAlphabet[rand() % ( sizeof(encryptionKeyAlphabet) - 1 )];
+        encryptionKeyStorage[i] = encryptionKeyAlphabet[rand() % ( sizeof(encryptionKeyAlphabet) - 1 )];
     }
 
-    encryptionKey[encryptionKeyLength] = '\0';
+    encryptionKeyStorage[encryptionKeyLength] = '\0';
 
 }
 
-void genereate_encryptionSalt ( char *encryptionSalt ) {
+void genereate_encryptionSalt ( char *encryptionSaltStorage ) {
     //. funzione che genera un sale di criptazione
 
     const char encryptionSaltAlphabet[] = "[{]}!@#$^&*()_+-=,./<>?;':|";
     srand( time(NULL) );
 
-    char *encryptionSalt = (char*) malloc( sizeof(char) * ( 5 ) );
-
     for ( int i = 0 ; i < 5 ; i++ ) {
-        encryptionSalt[i] = encryptionSaltAlphabet[rand() % ( sizeof(encryptionSaltAlphabet) - 1 )];
+        encryptionSaltStorage[i] = encryptionSaltAlphabet[rand() % ( sizeof(encryptionSaltAlphabet) - 1 )];
     }
 
-    encryptionSalt[5] = '\0';
+    encryptionSaltStorage[5] = '\0';
 
 }
 
@@ -117,7 +115,7 @@ void encrypt_string ( char *stringToEncrypt , char *encryptionKey , char *encryp
 
     encryptedString[stringToEncryptLength] = '\0';
 
-    strcpy( stringToEncrypt , encryptedString );
+    strcpy( stringToEncrypt , encryptedString ); // copio la stringa criptata nella stringa originale
 
     free( encryptedString );
 
@@ -155,7 +153,7 @@ void decrypt_string ( char *stringToDecrypt , char *encryptionKey , char *encryp
 
     decryptedString[stringToDecryptLength] = '\0';
 
-    strcpy( stringToDecrypt , decryptedString );
+    strcpy( stringToDecrypt , decryptedString ); // copio la stringa decriptata nella stringa originale
 
     free( decryptedString );
 
@@ -202,12 +200,11 @@ void set_ssapAddress ( char *nicName ) {
 
 }
 
-void set_dsapAddress ( u_char *packet ) {
-    //. funzione che imposta l'indirizzo MAC del DSAP (un altro dispositivo) basandosi su un pacchetto ricevuto
-
-    // copio l'indirizzo MAC del DSAP nella variabile globale dsapAddress
+void set_dsapAddress ( u_char *addressBytes ) {
+    //. funzione che imposta l'indirizzo MAC del DSAP
+    
     for ( int i=0 ; i<ETHER_ADDR_LEN ; i++ ) {
-        dsap_address.addressBytes[i] = packet[i+ETHER_ADDR_LEN];
+        dsapAddress.addressBytes[i] = addressBytes[i];
     }
 
 }
@@ -321,6 +318,10 @@ void broadcast_RTCS ( pcap_t *nicHandle ) {
     printf("Choose a name (long between 10 and 50 characters): ");
     fgets( name , 51 , stdin );
 
+    // controllo che il nome sia lungo almeno 10 caratteri e che non sia più lungo di 50 caratteri. Se non lo è, uso un nome di default
+    if ( strlen(name) < 10 || strlen(name) > 50 )
+        strcpy( name , "NoNameDevice\n" );
+
     // setto il nome ed il terminatore
     for ( int i=0 ; i<50 ; i++ ) {
         if ( name[i] == '\n' ) {
@@ -347,12 +348,21 @@ void list_availableInterlocutors ( pcap_t *nicHandle ) {
     int readingResult;
     packetHeader *header;
     const u_char *packetData;
+    boolean receivedRTCS = FALSE; // variabile che indica se ho ricevuto almeno una RTCS
 
-    while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
-        if ( readingResult == 0 ) {
+    // variabili per un timer che interrompa l'ascolto dopo un certo tempo
+    int milliseconds = 0 , trigger = 30000; // 30 secondi
+    clock_t start = clock();
+
+    while ( ((readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0) && (milliseconds<trigger) ) {
+        if ( readingResult == 0 ) { // nessun pacchetto ricevuto
             printf("Timeout expired. Restart the program.\n");
             exit(1);
         }
+
+        // aggiorno il timer
+        clock_t difference = clock() - start;
+        milliseconds = difference * 1000 / CLOCKS_PER_SEC;
 
 
 
@@ -360,18 +370,11 @@ void list_availableInterlocutors ( pcap_t *nicHandle ) {
         // controllo che il pacchetto ricevuto sia un RTCS
         if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x00 )
             continue;
-        
-        // controllo che il pacchetto sia stato broadcastato
-        if ( packetData[0] != 0xff || packetData[1] != 0xff || packetData[2] != 0xff || packetData[3] != 0xff || packetData[4] != 0xff || packetData[5] != 0xff )
-            continue;
-
-        // controllo che il pacchetto non sia stato inviato da me
-        if ( memcmp( packetData+6 , ssapAddress.addressBytes , ETHER_ADDR_LEN ) == 0 )
-            continue;
 
 
 
         //. operazioni da eseguire se il pacchetto è valido
+        receivedRTCS = TRUE;
         // stampo il nome e il MAC del dispositivo che ha broadcastato la RTCS
         printf( "%s : " , packetData+15 );
         for ( int i=0 ; i<ETHER_ADDR_LEN ; i++ ) {
@@ -401,6 +404,11 @@ void list_availableInterlocutors ( pcap_t *nicHandle ) {
         newInterlocutor->next = availableInterlocutorsHead;
         availableInterlocutorsHead = newInterlocutor;
 
+    }
+
+    if ( receivedRTCS == FALSE ) {
+        printf("No RTCS has been received. Restart the program.\n");
+        exit(1);
     }
 
 }
@@ -433,7 +441,7 @@ void choose_availableInterlocutor () {
         exit(1);
     }
 
-    // "confermo" la scelta del dispositivo
+    // comunico la scelta del dispositivo
     printf("You have chosen %s\n ---\n" , currentInterlocutor->interlocutor.name );
     set_dsapAddress( currentInterlocutor->interlocutor.address.addressBytes );
     myInterlocutor = currentInterlocutor->interlocutor;
@@ -498,29 +506,34 @@ void receive_STCS ( pcap_t *nicHandle ) {
     packetHeader *header;
     const u_char *packetData;
 
-    while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
+    // variabili per un timer che interrompa l'ascolto dopo un certo tempo
+    int milliseconds = 0 , trigger = 60000; // 60 secondi
+    clock_t start = clock();
+
+    while ( ((readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0) && (milliseconds<trigger) ) {
         if ( readingResult == 0 ) {
             printf("Timeout expired. Restart the program.\n");
             exit(0);
         }
 
+        // aggiorno il timer
+        clock_t difference = clock() - start;
+        milliseconds = difference * 1000 / CLOCKS_PER_SEC;
+
 
 
         //. controlli sulla validità del pacchetto
         // controllo che il pacchetto sia di tipo STCS
-        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x01 ) {
+        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x01 )
             continue;
-        }
 
         // controllo che il pacchetto sia per me
-        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
+        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
             continue;
-        }
 
         // controllo che il pacchetto sia stato inviato dal dispositivo scelto
-        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
+        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
             continue;
-        }
 
 
 
@@ -534,11 +547,15 @@ void receive_STCS ( pcap_t *nicHandle ) {
         myInterlocutor.name = (char*) malloc( sizeof(char) * ( strlen(packetData+15) + 1 ) );
         strcpy( myInterlocutor.name , packetData+15 );
         myInterlocutor.address = dsapAddress;
-        
         SetConsoleTitle( myInterlocutor.name );
 
         break;
 
+    }
+
+    if ( milliseconds >= trigger ) {
+        printf("No STCS has been received. Restart the program.\n");
+        exit(1);
     }
 
 }
@@ -577,7 +594,7 @@ void send_encryptionKey ( pcap_t *nicHandle ) {
     packet[12] = 0x7a;
     packet[13] = 0xbc;
 
-    // setto il primo byte a 4 ( per far confondere la chiave di criptazione con un messaggio )
+    // setto il primo byte a 4 ( per far confondere la chiave di criptazione con un messaggio criptato)
     packet[14] = 0x04;
 
     // copio la chiave di criptazione nel pacchetto
@@ -598,36 +615,41 @@ void send_encryptionKey ( pcap_t *nicHandle ) {
 
 }
 
-//. funzione che attende la chiave di criptazione (+ il sale) e la salva nelle apposite variabili globali
 void receive_encryptionKey ( pcap_t *nicHandle ) {
+    //. funzione che attende la chiave di criptazione (+ il sale) e la salva nelle apposite variabili globali
 
     int readingResult;
     packetHeader *header;
     const u_char *packetData;
 
-    while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
+    // variabili per un timer che interrompa l'ascolto dopo un certo tempo
+    int milliseconds = 0 , trigger = 10000; // 10 secondi
+    clock_t start = clock();
+
+    while ( ((readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0) && (milliseconds<trigger) ) {
         if ( readingResult == 0 )
             printf("Timeout expired. Restart the program.\n");
             exit(1);
         }
 
+        // aggiorno il timer
+        clock_t difference = clock() - start;
+        milliseconds = difference * 1000 / CLOCKS_PER_SEC;
+
 
 
         //. controlli sulla validità del pacchetto
         // controllo che il pacchetto sia di tipo messaggio
-        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x04 ) {
+        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x04 )
             continue;
-        }
 
         // controllo che il pacchetto sia per me
-        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
+        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
             continue;
-        }
 
         // controllo che il pacchetto sia stato inviato dal dispositivo scelto
-        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
+        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
             continue;
-        }
 
 
 
@@ -644,6 +666,11 @@ void receive_encryptionKey ( pcap_t *nicHandle ) {
 
         break;
 
+    }
+
+    if ( milliseconds >= trigger ) {
+        printf("No encryption key has been received. Restart the program.\n");
+        exit(1);
     }
 
 }   
@@ -708,19 +735,16 @@ void receiveAndPrint_message ( pcap_t *nicHandle ) {
             
         //. controlli sulla validità del pacchetto
         // controllo che il pacchetto sia di tipo messaggio
-        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x04 ) {
+        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x04 )
             continue;
-        }
 
         // controllo che il pacchetto sia per me
-        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
+        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
             continue;
-        }
 
         // controllo che il pacchetto sia stato inviato dal dispositivo scelto
-        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
+        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
             continue;
-        }
 
 
 
@@ -754,7 +778,7 @@ void cMaster_establish_connection ( pcap_t *nicHandle ) {
     
     send_encryptionKey( nicHandle ); // invio la chiave di criptazione
 
-    //todo faccio partire un thread di controllo che invierà periodicamente un pacchetto di verifica della connessione
+    //todo faccio partire un thread che ascolta periodicamente se il cSlave ha inviato un closeConnectionPacket
 
 }
 
@@ -767,7 +791,87 @@ void cSlave_establish_connection ( pcap_t *nicHandle ) {
 
     receive_encryptionKey( nicHandle ); // attesa della chiave di criptazione
 
-    //todo faccio partire un thread di controllo che risponderà periodicamente ad un pacchetto di verifica della connessione
+    //todo faccio partire un thread che ascolta periodicamente se il cMaster ha inviato un closeConnectionPacket
+
+}
+
+void checkout_connection ( pcap_t *nicHandle ) {
+    //todo . funzione che controlla periodicamente se qualcuno ha inviato un closeConnectionPacket
+
+}
+
+
+
+
+
+
+//! === CONNECTION MAINTENANCE SECTION ===
+void send_closeConnectionPacket ( pcap_t *nicHandle ) {
+    //. funzione che invia un pacchetto che comunica la chiusura della connessione
+
+    u_char packet[500];
+
+    // setto il DSAP al MAC del dispositivo specificato
+    for ( int i=0 ; i<ETHER_ADDR_LEN ; i++ )
+        packet[i] = dsapAddress.addressBytes[i];
+
+    // setto il SSAP in modo tale che sia uguale al mio MAC
+    for ( int i=0 ; i<ETHER_ADDR_LEN ; i++ )
+        packet[i+ETHER_ADDR_LEN] = ssapAddress.addressBytes[i-ETHER_ADDR_LEN];
+
+    // setto l'ethertype a quello usato per identificare l'applicazione
+    packet[12] = 0x7a;
+    packet[13] = 0xbc;
+
+    // setto il primo byte a 5 ( per far riconoscere il pacchetto )
+    packet[14] = 0x05;
+
+    // invio il pacchetto
+    int sendingResult = pcap_sendpacket( nicHandle , packet , 500 );
+    if ( sendingResult == 0 )
+        return;
+
+    // gestione dell'eventuale errore
+    fprintf( stderr , "\nError sending the packet: %s\n" , pcap_geterr(nicHandle) );
+    exit(1);
+
+}
+
+void listen_closeConnectionPacket ( pcap_t *nicHandle ) {
+    //. funzione che ascolta un pacchetto che comunica la chiusura della connessione
+
+    int readingResult;
+    packetHeader *header;
+    const u_char *packetData;
+
+    while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
+        if ( readingResult == 0 )
+            continue;
+
+
+
+        //. controlli sulla validità del pacchetto
+        // controllo che il pacchetto sia di tipo closeConnection
+        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x05 )
+            continue;
+
+        // controllo che il pacchetto sia per me
+        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
+            continue;
+
+        // controllo che il pacchetto sia stato inviato dal dispositivo scelto
+        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 )
+            continue;
+
+
+
+        //. operazioni da eseguire se il pacchetto è valido
+        printf("\r");
+        printf("\n---\nThe connection has been closed by the other device.\n---\n");
+
+        exit(0);
+
+    }
 
 }
 
@@ -779,7 +883,7 @@ void cSlave_establish_connection ( pcap_t *nicHandle ) {
 //! === MAIN SECTION ===
 void main () {
 
-
+    atexit(send_closeConnectionPacket); // invio un pacchetto che comunica la chiusura della connessione quando l'applicazione viene chiusa
 
     //. inizializzazione delle "impostazioni di partenza" comuni a cMaster e cSlave
     SetConsoleTitle("DISC");
@@ -803,8 +907,10 @@ void main () {
         cSlave_establish_connection( nicHandle );
 
 
+
     //. esecuzione della chat
     while (1) {
+
         // invio di un messaggio
         char message[1000];
         printf("You : ");
@@ -813,6 +919,7 @@ void main () {
 
         // ricezione di un messaggio
         receiveAndPrint_message( nicHandle );
+    
     }
 
 }
