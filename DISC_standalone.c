@@ -1,7 +1,17 @@
 #include <stdio.h>
-#include <pcap.h>
-#include "encryptionFunctions.h"
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <windows.h>
 
+#include <pcap.h>
+
+
+
+
+
+
+//! === CONSTANTS, STRUCTURES AND ENUMS ===
 #define ETHER_ADDR_LEN 6    // gli indirizzi MAC sono lunghi 6 byte
 #define ETHER_ETYP_LEN 2    // il campo EtherType è lungo 2 byte
 #define ETHER_HEAD_LEN 14   // l'header Ethernet è lungo 14 byte
@@ -27,16 +37,136 @@ typedef struct availableInterlocutorsList {
 mac_address ssapAddress; // indirizzo MAC del SSAP ( il mio indirizzo MAC )
 mac_address dsap_address; // indirizzo MAC del DSAP ( il MAC della scheda di rete del destinatario )
 availableInterlocutorsList *availableInterlocutorsHead = NULL; // lista dei dispositivi che hanno inviato RTCS
+availableInterlocutor myInterlocutor; // interlocutore scelto dall'utente
 
 char *encryptionKey; // chiave di criptazione
 char *encryptionSalt // sale di criptazione
 
+typedef enum boolean {
+    false = 0,
+    true = 1
+} boolean;
 
 
 
 
 
-//! === ADDRESS SETTING FUNCTIONS ===
+
+//! === ENCRYPTION SECTION ===
+void genereate_encryptionKey ( char *encryptionKey , int encryptionKeyLength ) {
+    //. funzione che genera una chiave di criptazione
+
+    const char encryptionKeyAlphabet[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    srand( time(NULL) );
+
+    for ( int i = 0 ; i < encryptionKeyLength ; i++ ) {
+        encryptionKey[i] = encryptionKeyAlphabet[rand() % ( sizeof(encryptionKeyAlphabet) - 1 )];
+    }
+
+    encryptionKey[encryptionKeyLength] = '\0';
+
+}
+
+void genereate_encryptionSalt ( char *encryptionSalt ) {
+    //. funzione che genera un sale di criptazione
+
+    const char encryptionSaltAlphabet[] = "[{]}!@#$^&*()_+-=,./<>?;':|";
+    srand( time(NULL) );
+
+    char *encryptionSalt = (char*) malloc( sizeof(char) * ( 5 ) );
+
+    for ( int i = 0 ; i < 5 ; i++ ) {
+        encryptionSalt[i] = encryptionSaltAlphabet[rand() % ( sizeof(encryptionSaltAlphabet) - 1 )];
+    }
+
+    encryptionSalt[5] = '\0';
+
+}
+
+
+
+void encrypt_string ( char *stringToEncrypt , char *encryptionKey , char *encryptionSalt ) {
+    //. funzione che cripta una stringa
+
+    int stringToEncryptLength = strlen( stringToEncrypt );
+    int encryptionKeyLength = strlen( encryptionKey );
+    int encryptionSaltLength = strlen( encryptionSalt );
+
+    char *encryptedString = (char*) malloc( sizeof(char) * ( stringToEncryptLength + encryptionKeyLength + encryptionSaltLength + 1 ) );
+
+    int i = 0;
+    int j = 0;
+    int k = 0;
+
+    // in questo modo se la chiave di criptazione è più corta della stringa da criptare, la chiave viene ripetuta
+    while ( i < stringToEncryptLength ) {
+        encryptedString[i] = stringToEncrypt[i] ^ encryptionKey[j] ^ encryptionSalt[k];
+
+        i++;
+        j++;
+        k++;
+
+        if ( j == encryptionKeyLength ) {
+            j = 0;
+        }
+
+        if ( k == encryptionSaltLength ) {
+            k = 0;
+        }
+    }
+
+    encryptedString[stringToEncryptLength] = '\0';
+
+    strcpy( stringToEncrypt , encryptedString );
+
+    free( encryptedString );
+
+}
+
+void decrypt_string ( char *stringToDecrypt , char *encryptionKey , char *encryptionSalt ) {
+    //. funzione che decripta una stringa
+
+    int stringToDecryptLength = strlen( stringToDecrypt );
+    int encryptionKeyLength = strlen( encryptionKey );
+    int encryptionSaltLength = strlen( encryptionSalt );
+
+    char *decryptedString = (char*) malloc( sizeof(char) * ( stringToDecryptLength + encryptionKeyLength + encryptionSaltLength + 1 ) );
+
+    int i = 0;
+    int j = 0;
+    int k = 0;
+
+    // in questo modo se la chiave di criptazione è più corta della stringa da criptare, la chiave viene ripetuta
+    while ( i < stringToDecryptLength ) {
+        decryptedString[i] = stringToDecrypt[i] ^ encryptionKey[j] ^ encryptionSalt[k];
+
+        i++;
+        j++;
+        k++;
+
+        if ( j == encryptionKeyLength ) {
+            j = 0;
+        }
+
+        if ( k == encryptionSaltLength ) {
+            k = 0;
+        }
+    }
+
+    decryptedString[stringToDecryptLength] = '\0';
+
+    strcpy( stringToDecrypt , decryptedString );
+
+    free( decryptedString );
+
+}
+
+
+
+
+
+
+//! === ADDRESS SETTING SECTION ===
 void set_ssapAddress ( char *nicName ) {
     //. funzione che imposta l'indirizzo MAC del SSAP
 
@@ -87,7 +217,7 @@ void set_dsapAddress ( u_char *packet ) {
 
 
 
-//! === NIC RELATED FUNCTIONS ===
+//! === NIC SETTING SECTION ===
 void list_availableNICs () {
     //. funzione che elenca le NICs (network interface cards) disponibili
 
@@ -135,7 +265,7 @@ pcap_t *open_NIC ( char *nicName ) {
 
 }
 
-pcap_t *choose_NIC () { //tocheck
+pcap_t *choose_NIC () {
     //. funzione che stampa le NIC disponibili e chiede all'utente di sceglierne una
 
     // stampo le NIC disponibili
@@ -165,7 +295,7 @@ pcap_t *choose_NIC () { //tocheck
 
 
 
-//! === RTCS RELATED FUNCTIONS ===
+//! === RTCS SENDING-RECEIVING SECTION ===
 void broadcast_RTCS ( pcap_t *nicHandle ) {
     //. funzione che "broadcasta" una RTCS sulla rete locale
 
@@ -220,7 +350,7 @@ void list_availableInterlocutors ( pcap_t *nicHandle ) {
 
     while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
         if ( readingResult == 0 ) {
-            printf("Timeout expired. Restart the program\n");
+            printf("Timeout expired. Restart the program.\n");
             exit(1);
         }
 
@@ -275,7 +405,7 @@ void list_availableInterlocutors ( pcap_t *nicHandle ) {
 
 }
 
-availableInterlocutor choose_availableInterlocutor () {
+void choose_availableInterlocutor () {
     //. funzione che chiede all'utente di scegliere un dispositivo tra quelli disponibili
 
     list_availableInterlocutors();
@@ -303,9 +433,11 @@ availableInterlocutor choose_availableInterlocutor () {
         exit(1);
     }
 
-    // ritorno il dispositivo scelto
+    // "confermo" la scelta del dispositivo
+    printf("You have chosen %s\n ---\n" , currentInterlocutor->interlocutor.name );
     set_dsapAddress( currentInterlocutor->interlocutor.address.addressBytes );
-    return currentInterlocutor->interlocutor;
+    myInterlocutor = currentInterlocutor->interlocutor;
+    SetConsoleTitle( myInterlocutor.name );
 
 }
 
@@ -314,7 +446,7 @@ availableInterlocutor choose_availableInterlocutor () {
 
 
 
-//! === STCS RELATED FUNCTIONS ===
+//! === STCS SENDING-RECEIVING SECTION ===
 void send_STCS ( pcap_t *nicHandle ) {
     //. funzione che invia una STCS al dispositivo specificato
 
@@ -368,7 +500,7 @@ void receive_STCS ( pcap_t *nicHandle ) {
 
     while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
         if ( readingResult == 0 ) {
-            printf("Timeout expired. Restart the program\n");
+            printf("Timeout expired. Restart the program.\n");
             exit(0);
         }
 
@@ -395,6 +527,16 @@ void receive_STCS ( pcap_t *nicHandle ) {
         //. operazioni da eseguire se il pacchetto è valido
         // setto il DSAP al MAC del mittente
         set_dsapAddress( packetData+ETHER_ADDR_LEN );
+
+        // stampo il nome del mittente
+        printf( "%s has chosen you as his interlocutor.\n ---\n" , packetData+15 );
+
+        myInterlocutor.name = (char*) malloc( sizeof(char) * ( strlen(packetData+15) + 1 ) );
+        strcpy( myInterlocutor.name , packetData+15 );
+        myInterlocutor.address = dsapAddress;
+        
+        SetConsoleTitle( myInterlocutor.name );
+
         break;
 
     }
@@ -406,7 +548,7 @@ void receive_STCS ( pcap_t *nicHandle ) {
 
 
 
-//! === ENCRYPTION SETTINGS RELATED FUNCTIONS ===
+//! === ENCRYPTION KEY SENDING-RECEIVING SECTION ===
 void send_encryptionKey ( pcap_t *nicHandle ) {
     //. funzione che genera ed invia la chiave di criptazione (+ il sale)
 
@@ -465,7 +607,7 @@ void receive_encryptionKey ( pcap_t *nicHandle ) {
 
     while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
         if ( readingResult == 0 )
-            printf("Timeout expired. Restart the program\n");
+            printf("Timeout expired. Restart the program.\n");
             exit(1);
         }
 
@@ -511,7 +653,7 @@ void receive_encryptionKey ( pcap_t *nicHandle ) {
 
 
 
-//! === CONNECTION VERIFICATION FUNCTIONS ===
+//! === CONNECTION VERIFICATION SECTION ===
 void send_connectionVerificationPacket ( pcap_t *nicHandle ) {
     //. funzione che invia un pacchetto di verifica della connessione (ping)
 
@@ -583,7 +725,7 @@ void receive_connectionVerificationPacket ( pcap_t *nicHandle ) {
 
 
 
-//! === CHAT FUNCTIONS ===
+//! === CHAT SECTION ===
 void send_message ( pcap_t *nicHandle , char *message ) {
     //. funzione che invia un messaggio dopo averlo criptato
 
@@ -618,6 +760,7 @@ void send_message ( pcap_t *nicHandle , char *message ) {
 
     // gestione dell'eventuale errore
     fprintf( stderr , "\nError sending the packet: %s\n" , pcap_geterr(nicHandle) );
+    exit(1);
 
 }
 
@@ -629,13 +772,11 @@ void receiveAndPrint_message ( pcap_t *nicHandle ) {
     const u_char *packetData;
 
     while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
-        if ( readingResult == 0 ) {
-            printf("Timeout expired. Restart the program\n");
-            exit(1);
-        }
+        if ( readingResult == 0 )
+            continue;
 
 
-
+            
         //. controlli sulla validità del pacchetto
         // controllo che il pacchetto sia di tipo messaggio
         if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x04 ) {
@@ -660,10 +801,111 @@ void receiveAndPrint_message ( pcap_t *nicHandle ) {
         encrypt_string( packetData+15 , encryptionKey , encryptionSalt );
 
         // stampo il messaggio
-        printf( "%s\n" , decryptedMessage );
+        printf( "%s : %s\n" , myInterlocutor.name , decryptedMessage );
 
         break;
 
+    }
+
+}
+
+
+
+
+
+
+//! === MASTER & SLAVE CONNECTION ESTABLISHMENT ROUTINES ===
+void cMaster_establish_connection ( pcap_t *nicHandle ) {
+    //. funzione che stabilisce la connessione tra il cMaster ed il cSlave
+
+    // handshake per stabilire la connessione
+    myInterlocutor = choose_availableInterlocutor(); // scelta dell'interlocutore
+    send_STCS( nicHandle ); // invio la StCS
+    
+    send_encryptionKey( nicHandle ); // invio la chiave di criptazione
+
+    //todo faccio partire un thread di controllo che invierà periodicamente un pacchetto di verifica della connessione
+
+}
+
+void cMaster_maintain_connection ( pcap_t *nicHandle ) {
+    //. funzione che mantiene la connessione tra il cMaster ed il cSlave
+
+    // invio di un pacchetto di verifica della connessione
+    send_connectionVerificationPacket( nicHandle );
+
+    // attesa di un pacchetto di verifica della connessione
+    receive_connectionVerificationPacket( nicHandle );
+
+}
+
+void cSlave_establish_connection ( pcap_t *nicHandle ) {
+    //. funzione che stabilisce la connessione tra il cSlave ed il cMaster
+
+    // handshake per stabilire la connessione
+    broadcast_RTCS( nicHandle ); // broadcast della RTCS
+    receive_STCS( nicHandle ); // attesa della STCS
+
+    receive_encryptionKey( nicHandle ); // attesa della chiave di criptazione
+
+    //todo faccio partire un thread di controllo che risponderà periodicamente ad un pacchetto di verifica della connessione
+
+}
+
+void cSlave_maintain_connection ( pcap_t *nicHandle ) {
+    //. funzione che mantiene la connessione tra il cSlave ed il cMaster
+
+    // attesa di un pacchetto di verifica della connessione
+    receive_connectionVerificationPacket( nicHandle );
+
+    // invio di un pacchetto di verifica della connessione
+    send_connectionVerificationPacket( nicHandle );
+
+}
+
+
+
+
+
+
+//! === MAIN SECTION ===
+void main () {
+
+
+
+    //. inizializzazione delle "impostazioni di partenza" comuni a cMaster e cSlave
+    SetConsoleTitle("DISC");
+    pcap_t *nicHandle = choose_NIC(); // scelta della NIC
+
+    // chiedo se vuole essere cMaster o cSlave
+    boolean isMaster = FALSE;
+    char answer[2];
+    printf("Do you want to choose your interlocutor? (y/n) ");
+    fgets( answer , 2 , stdin );
+    if ( answer[0] == 'y' || answer[0] == 'Y' ) {
+        isMaster = TRUE;
+    }
+
+
+
+    //. esecuzione delle routine di connessione
+    if (isMaster)
+        cMaster_establish_connection( nicHandle ); 
+    else
+        cSlave_establish_connection( nicHandle );
+
+
+
+    //. esecuzione della chat
+    while (1) {
+        // invio di un messaggio
+        char message[1000];
+        printf("You : ");
+        fgets( message , 1000 , stdin );
+        send_message( nicHandle , message );
+
+        // ricezione di un messaggio
+        receiveAndPrint_message( nicHandle );
     }
 
 }
