@@ -577,8 +577,8 @@ void send_encryptionKey ( pcap_t *nicHandle ) {
     packet[12] = 0x7a;
     packet[13] = 0xbc;
 
-    // setto il primo byte a 2 ( per far riconoscere la chiave di criptazione )
-    packet[14] = 0x02;
+    // setto il primo byte a 4 ( per far confondere la chiave di criptazione con un messaggio )
+    packet[14] = 0x04;
 
     // copio la chiave di criptazione nel pacchetto
     for ( int i=0 ; i<32 ; i++ )
@@ -614,8 +614,8 @@ void receive_encryptionKey ( pcap_t *nicHandle ) {
 
 
         //. controlli sulla validità del pacchetto
-        // controllo che il pacchetto sia di tipo chiave di criptazione
-        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x02 ) {
+        // controllo che il pacchetto sia di tipo messaggio
+        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x04 ) {
             continue;
         }
 
@@ -648,77 +648,6 @@ void receive_encryptionKey ( pcap_t *nicHandle ) {
 
 }   
 
-
-
-
-
-
-//! === CONNECTION VERIFICATION SECTION ===
-void send_connectionVerificationPacket ( pcap_t *nicHandle ) {
-    //. funzione che invia un pacchetto di verifica della connessione (ping)
-
-    u_char packet[500];
-    
-    // setto il DSAP al MAC del dispositivo specificato
-    for ( int i=0 ; i<ETHER_ADDR_LEN ; i++ )
-        packet[i] = dsapAddress.addressBytes[i];
-
-    // setto il SSAP in modo tale che sia uguale al mio MAC
-    for ( int i=0 ; i<ETHER_ADDR_LEN ; i++ )
-        packet[i+ETHER_ADDR_LEN] = ssapAddress.addressBytes[i-ETHER_ADDR_LEN];
-    
-    // setto l'ethertype a quello usato per identificare l'applicazione
-    packet[12] = 0x7a;
-    packet[13] = 0xbc;
-
-    // setto il primo byte a 3 ( per far riconoscere il pacchetto di verifica della connessione )
-    packet[14] = 0x03;
-
-    // invio il pacchetto
-    int sendingResult = pcap_sendpacket( nicHandle , packet , 500 );
-    if ( sendingResult == 0 )
-        return;
-
-    // non gestisco l'eventuale errore perchè stamperebbe un messaggio di errore che offuscherebbe la chat
-
-}
-
-void receive_connectionVerificationPacket ( pcap_t *nicHandle ) {
-    //. funzione che attende un pacchetto di verifica della connessione (pong)
-
-    int readingResult;
-    packetHeader *header;
-    const u_char *packetData;
-
-    while ( (readingResult=pcap_next_ex( nicHandle , &header , &packetData )) >= 0 ) {
-        if ( readingResult == 0 ) {
-            printf("Timeout expired. The other device is not responding.\n");
-            exit(1);
-        }
-
-
-
-        //. controlli sulla validità del pacchetto
-        // controllo che il pacchetto sia di tipo verifica della connessione
-        if ( packetData[12] != 0x7a || packetData[13] != 0xbc || packetData[14] != 0x03 ) {
-            continue;
-        }
-
-        // controllo che il pacchetto sia per me
-        if ( memcmp( packetData , ssapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
-            continue;
-        }
-
-        // controllo che il pacchetto sia stato inviato dal dispositivo scelto
-        if ( memcmp( packetData+6 , dsapAddress.addressBytes , ETHER_ADDR_LEN ) != 0 ) {
-            continue;
-        }
-
-        break;
-
-    }
-
-}
 
 
 
@@ -798,7 +727,8 @@ void receiveAndPrint_message ( pcap_t *nicHandle ) {
         //. operazioni da eseguire se il pacchetto è valido
         // decripto il messaggio
         char *decryptedMessage = (char*) malloc( sizeof(char) * ( strlen(packetData+15) + 1 ) );
-        encrypt_string( packetData+15 , encryptionKey , encryptionSalt );
+        strcpy( decryptedMessage , packetData+15 );
+        decrypt_string( decryptedMessage , encryptionKey , encryptionSalt );
 
         // stampo il messaggio
         printf( "%s : %s\n" , myInterlocutor.name , decryptedMessage );
@@ -828,17 +758,6 @@ void cMaster_establish_connection ( pcap_t *nicHandle ) {
 
 }
 
-void cMaster_maintain_connection ( pcap_t *nicHandle ) {
-    //. funzione che mantiene la connessione tra il cMaster ed il cSlave
-
-    // invio di un pacchetto di verifica della connessione
-    send_connectionVerificationPacket( nicHandle );
-
-    // attesa di un pacchetto di verifica della connessione
-    receive_connectionVerificationPacket( nicHandle );
-
-}
-
 void cSlave_establish_connection ( pcap_t *nicHandle ) {
     //. funzione che stabilisce la connessione tra il cSlave ed il cMaster
 
@@ -849,17 +768,6 @@ void cSlave_establish_connection ( pcap_t *nicHandle ) {
     receive_encryptionKey( nicHandle ); // attesa della chiave di criptazione
 
     //todo faccio partire un thread di controllo che risponderà periodicamente ad un pacchetto di verifica della connessione
-
-}
-
-void cSlave_maintain_connection ( pcap_t *nicHandle ) {
-    //. funzione che mantiene la connessione tra il cSlave ed il cMaster
-
-    // attesa di un pacchetto di verifica della connessione
-    receive_connectionVerificationPacket( nicHandle );
-
-    // invio di un pacchetto di verifica della connessione
-    send_connectionVerificationPacket( nicHandle );
 
 }
 
@@ -889,11 +797,10 @@ void main () {
 
 
     //. esecuzione delle routine di connessione
-    if (isMaster)
-        cMaster_establish_connection( nicHandle ); 
+    if ( isMaster )
+        cMaster_establish_connection( nicHandle );
     else
         cSlave_establish_connection( nicHandle );
-
 
 
     //. esecuzione della chat
