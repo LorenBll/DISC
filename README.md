@@ -19,7 +19,7 @@ DISC requires the presence of Winpcap on the system. It can be downloaded from [
 
 ## Usage
 
-DISC is a command line application. It must be compiled and then executed from the command line. At the start of the application must be specified the network interface (aka the network card) to use. After doing so you will be asked if you want to make yourself available to other devices (Conversation Slave) running DISC or be the one to choose the device to communicate with (Conversation Master).
+DISC is a command line application. It must be compiled and then executed from the command line. At the start of the application you must specify the network interface (aka the network card) to use. After doing so you will be asked if you want to make yourself available to other devices (Conversation Slave) running DISC or be the one to choose the device to communicate with (Conversation Master).
 
 If you are the **Conversation Master** you will be asked to choose the device to communicate with. After doing so you will be asked to insert the message to send. The message will be encrypted and sent to the other device. If you are the **Conversation Slave** you will be asked to wait for a message. When a message is received it will be decrypted and shown to you. After that you will be asked to insert the message to send. The message will be encrypted and sent to the other device. This cycle lasts until one of the two devices closes the application: when this happens the other device will be notified and the application will close.
 
