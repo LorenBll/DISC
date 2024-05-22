@@ -25,5 +25,5 @@ If you are the **Conversation Master** you will be asked to choose the device to
 
 ## Authors
 
-[LorenBll](https://github.com/LorenBll)
-[LandiFigone777](https://github.com/LandiFigone777)
+- [LorenBll](https://github.com/LorenBll) ;
+- [LandiFigone777](https://github.com/LandiFigone777) .
